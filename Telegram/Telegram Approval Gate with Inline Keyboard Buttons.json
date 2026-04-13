@@ -1,0 +1,527 @@
+{
+  "name": "Telegram Approval Gate with Inline Keyboard Buttons",
+  "meta": {
+    "instanceId": "awesome-n8n-templates"
+  },
+  "tags": [
+    { "name": "telegram" },
+    { "name": "approval" },
+    { "name": "inline-keyboard" }
+  ],
+  "nodes": [
+    {
+      "id": "tg-appr-sn-001",
+      "name": "Sticky Note \u2014 How this works",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [-420, 0],
+      "parameters": {
+        "width": 380,
+        "height": 700,
+        "content": "## Telegram Approval Gate\n### Inline Keyboard Buttons\n\n**Adapted from:** Telegram AI Chatbot template\n\n---\n\n## How it works\n\nTwo independent trigger chains in one workflow:\n\n**Chain A \u2014 Send for Review**\n1. A webhook receives item data from your pipeline\n2. Formats a review card message\n3. Sends it to Telegram with Approve / Reject / Request Changes buttons\n\n**Chain B \u2014 Callback Handler**\n1. Telegram Trigger catches the button press (callback_query)\n2. Parses `action:item_id` from callback_data\n3. Routes to the correct branch via Switch\n4. Answers the callback (clears loading spinner)\n5. Edits the original message to reflect the decision\n6. Logs result to Google Sheets\n\n---\n\n## Callback data format\n`{action}:{item_id}`\n\nExamples:\n- `approve:item_42`\n- `reject:item_42`\n- `changes:item_42`\n\n---\n\n## Setup checklist\n1. Set your Telegram bot credential\n2. Replace `YOUR_CHAT_ID` with your chat/group ID\n3. Replace `YOUR_GOOGLE_SHEETS_ID` with your Sheet ID\n4. Add an `ApprovalLog` sheet with columns:\n   Item ID / Status / Reviewer / Timestamp\n5. Activate the workflow\n6. Call the webhook URL from your pipeline"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-sn-chain-a",
+      "name": "Sticky Note \u2014 Chain A",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [20, -80],
+      "parameters": {
+        "width": 780,
+        "height": 120,
+        "color": 5,
+        "content": "## Chain A \u2014 Send for Review\nWebhook receives item data \u2192 formats review card \u2192 sends Telegram message with inline keyboard"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-001",
+      "name": "Receive Item for Review",
+      "type": "n8n-nodes-base.webhook",
+      "position": [80, 60],
+      "webhookId": "tg-approval-gate-send",
+      "parameters": {
+        "path": "tg-approval-gate-send",
+        "responseMode": "responseNode",
+        "httpMethod": "POST"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-002",
+      "name": "Format Review Card",
+      "type": "n8n-nodes-base.set",
+      "position": [300, 60],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "item_id",
+              "value": "={{ $json.body.item_id }}"
+            },
+            {
+              "name": "message_text",
+              "value": "=\ud83d\udccc *Review Request*\n\n*Item:* {{ $json.body.item_id }}\n*Title:* {{ $json.body.title }}\n*Submitted by:* {{ $json.body.submitted_by }}\n\n*Summary:*\n{{ $json.body.summary }}\n\n---\nPlease review and tap a button:"
+            },
+            {
+              "name": "reply_markup",
+              "value": "={{ JSON.stringify({ inline_keyboard: [[{ text: '\u2705 Approve', callback_data: 'approve:' + $json.body.item_id }, { text: '\u274c Reject', callback_data: 'reject:' + $json.body.item_id }, { text: '\ud83d\udcdd Request Changes', callback_data: 'changes:' + $json.body.item_id }]] }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "tg-appr-003",
+      "name": "Send Review Message",
+      "type": "n8n-nodes-base.telegram",
+      "position": [520, 60],
+      "parameters": {
+        "text": "={{ $json.message_text }}",
+        "chatId": "YOUR_CHAT_ID",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_markup": "={{ $json.reply_markup }}"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-004",
+      "name": "Respond to Caller",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [740, 60],
+      "parameters": {
+        "respondWith": "json",
+        "options": {
+          "responseBody": "={{ JSON.stringify({ status: 'sent', item_id: $('Format Review Card').first().json.item_id }) }}"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-sn-chain-b",
+      "name": "Sticky Note \u2014 Chain B",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [20, 220],
+      "parameters": {
+        "width": 1540,
+        "height": 120,
+        "color": 5,
+        "content": "## Chain B \u2014 Callback Handler\nTelegram Trigger catches callback_query \u2192 parses action:item_id \u2192 Switch routes to Approve / Reject / Changes / Fallback branch"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-005",
+      "name": "Listen for Button Presses",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "position": [80, 400],
+      "webhookId": "tg-approval-gate-callback",
+      "parameters": {
+        "updates": ["callback_query"],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-006",
+      "name": "Extract Callback Data",
+      "type": "n8n-nodes-base.set",
+      "position": [300, 400],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "callback_query_id",
+              "value": "={{ $json.callback_query.id }}"
+            },
+            {
+              "name": "action",
+              "value": "={{ $json.callback_query.data.split(':')[0] }}"
+            },
+            {
+              "name": "item_id",
+              "value": "={{ $json.callback_query.data.split(':')[1] }}"
+            },
+            {
+              "name": "reviewer_name",
+              "value": "={{ $json.callback_query.from.first_name }}"
+            },
+            {
+              "name": "chat_id",
+              "value": "={{ String($json.callback_query.message.chat.id) }}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{ $json.callback_query.message.message_id }}"
+            },
+            {
+              "name": "reviewed_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "tg-appr-007",
+      "name": "Route on Action",
+      "type": "n8n-nodes-base.switch",
+      "position": [520, 400],
+      "parameters": {
+        "value1": "={{ $json.action }}",
+        "dataType": "string",
+        "fallbackOutput": 3,
+        "rules": {
+          "rules": [
+            { "output": 0, "value2": "approve", "operation": "equal" },
+            { "output": 1, "value2": "reject",  "operation": "equal" },
+            { "output": 2, "value2": "changes", "operation": "equal" }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-008",
+      "name": "[Approve] Answer Callback",
+      "type": "n8n-nodes-base.telegram",
+      "position": [760, 240],
+      "parameters": {
+        "operation": "answerCallbackQuery",
+        "queryId": "={{ $json.callback_query_id }}",
+        "additionalFields": {
+          "text": "\u2705 Approved!"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-009",
+      "name": "[Approve] Edit Message",
+      "type": "n8n-nodes-base.telegram",
+      "position": [980, 240],
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $json.chat_id }}",
+        "messageId": "={{ $json.message_id }}",
+        "text": "=\u2705 *APPROVED* \u2014 {{ $json.item_id }}\n\nApproved by {{ $json.reviewer_name }}\n{{ $json.reviewed_at }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-010",
+      "name": "[Approve] Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [1200, 240],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEETS_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ApprovalLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Item ID": "={{ $json.item_id }}",
+            "Status": "APPROVED",
+            "Reviewer": "={{ $json.reviewer_name }}",
+            "Timestamp": "={{ $json.reviewed_at }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "2",
+          "name": "Google Sheets"
+        }
+      },
+      "typeVersion": 4
+    },
+    {
+      "id": "tg-appr-011",
+      "name": "[Reject] Answer Callback",
+      "type": "n8n-nodes-base.telegram",
+      "position": [760, 400],
+      "parameters": {
+        "operation": "answerCallbackQuery",
+        "queryId": "={{ $json.callback_query_id }}",
+        "additionalFields": {
+          "text": "\u274c Rejected."
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-012",
+      "name": "[Reject] Edit Message",
+      "type": "n8n-nodes-base.telegram",
+      "position": [980, 400],
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $json.chat_id }}",
+        "messageId": "={{ $json.message_id }}",
+        "text": "=\u274c *REJECTED* \u2014 {{ $json.item_id }}\n\nRejected by {{ $json.reviewer_name }}\n{{ $json.reviewed_at }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-013",
+      "name": "[Reject] Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [1200, 400],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEETS_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ApprovalLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Item ID": "={{ $json.item_id }}",
+            "Status": "REJECTED",
+            "Reviewer": "={{ $json.reviewer_name }}",
+            "Timestamp": "={{ $json.reviewed_at }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "2",
+          "name": "Google Sheets"
+        }
+      },
+      "typeVersion": 4
+    },
+    {
+      "id": "tg-appr-014",
+      "name": "[Changes] Answer Callback",
+      "type": "n8n-nodes-base.telegram",
+      "position": [760, 560],
+      "parameters": {
+        "operation": "answerCallbackQuery",
+        "queryId": "={{ $json.callback_query_id }}",
+        "additionalFields": {
+          "text": "\ud83d\udcdd Please type your feedback in the chat."
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-015",
+      "name": "[Changes] Edit Message",
+      "type": "n8n-nodes-base.telegram",
+      "position": [980, 560],
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $json.chat_id }}",
+        "messageId": "={{ $json.message_id }}",
+        "text": "=\ud83d\udcdd *CHANGES REQUESTED* \u2014 {{ $json.item_id }}\n\nFeedback requested by {{ $json.reviewer_name }}\n{{ $json.reviewed_at }}\n\nAwaiting feedback...",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-016",
+      "name": "[Changes] Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "position": [1200, 560],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEETS_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ApprovalLog",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Item ID": "={{ $json.item_id }}",
+            "Status": "CHANGES_REQUESTED",
+            "Reviewer": "={{ $json.reviewer_name }}",
+            "Timestamp": "={{ $json.reviewed_at }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "2",
+          "name": "Google Sheets"
+        }
+      },
+      "typeVersion": 4
+    },
+    {
+      "id": "tg-appr-017",
+      "name": "[Changes] Send Feedback Prompt",
+      "type": "n8n-nodes-base.telegram",
+      "position": [1420, 560],
+      "parameters": {
+        "text": "=\ud83d\udcdd Please reply with your feedback for *{{ $json.item_id }}*.",
+        "chatId": "={{ $json.chat_id }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "tg-appr-018",
+      "name": "Fallback \u2014 Unknown Action",
+      "type": "n8n-nodes-base.telegram",
+      "position": [760, 720],
+      "parameters": {
+        "text": "\u26a0\ufe0f Unknown action. Please use the approval buttons.",
+        "chatId": "YOUR_CHAT_ID",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      },
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Receive Item for Review": {
+      "main": [[{ "node": "Format Review Card", "type": "main", "index": 0 }]]
+    },
+    "Format Review Card": {
+      "main": [[{ "node": "Send Review Message", "type": "main", "index": 0 }]]
+    },
+    "Send Review Message": {
+      "main": [[{ "node": "Respond to Caller", "type": "main", "index": 0 }]]
+    },
+    "Listen for Button Presses": {
+      "main": [[{ "node": "Extract Callback Data", "type": "main", "index": 0 }]]
+    },
+    "Extract Callback Data": {
+      "main": [[{ "node": "Route on Action", "type": "main", "index": 0 }]]
+    },
+    "Route on Action": {
+      "main": [
+        [{ "node": "[Approve] Answer Callback",  "type": "main", "index": 0 }],
+        [{ "node": "[Reject] Answer Callback",   "type": "main", "index": 0 }],
+        [{ "node": "[Changes] Answer Callback",  "type": "main", "index": 0 }],
+        [{ "node": "Fallback \u2014 Unknown Action", "type": "main", "index": 0 }]
+      ]
+    },
+    "[Approve] Answer Callback": {
+      "main": [[{ "node": "[Approve] Edit Message", "type": "main", "index": 0 }]]
+    },
+    "[Approve] Edit Message": {
+      "main": [[{ "node": "[Approve] Log to Sheets", "type": "main", "index": 0 }]]
+    },
+    "[Reject] Answer Callback": {
+      "main": [[{ "node": "[Reject] Edit Message", "type": "main", "index": 0 }]]
+    },
+    "[Reject] Edit Message": {
+      "main": [[{ "node": "[Reject] Log to Sheets", "type": "main", "index": 0 }]]
+    },
+    "[Changes] Answer Callback": {
+      "main": [[{ "node": "[Changes] Edit Message", "type": "main", "index": 0 }]]
+    },
+    "[Changes] Edit Message": {
+      "main": [[{ "node": "[Changes] Log to Sheets", "type": "main", "index": 0 }]]
+    },
+    "[Changes] Log to Sheets": {
+      "main": [[{ "node": "[Changes] Send Feedback Prompt", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  }
+}
